@@ -152,7 +152,7 @@ stages:
                 -webDescription "Default Web Site" 
                 -webSPort 80 
                 -webSiteIp "*" 
-                -dsnMssqlDatabase "KFU-QA" 
+                -dsnMssqlDatabase "KFU_QA" 
                 -dsnMssqlPassword "!Titanium1" 
                 -dsnMssqlServer "10.0.1.11" 
                 -dsnMssqlUsername "saluddental" 
@@ -250,7 +250,7 @@ stages:
               arguments: >
                 -exePath "C:\Program Files\Titanium Solutions\Dental Web Services\bin\Titanium.Migration.DataAccess.Migration.exe" 
                 -server "10.0.1.11" 
-                -database "KFU-QA" 
+                -database "KFU_QA" 
                 -user "saluddental" 
                 -password "$(dsn_mssql_password)" 
                 -logFile "C:\Build\DataMigrationLog.txt"
