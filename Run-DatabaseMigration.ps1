@@ -1,7 +1,7 @@
 param (
     [string]$exePath = "C:\Program Files\Titanium Solutions\Dental Web Services\bin\Titanium.Migration.DataAccess.Migration.exe",
     [string]$server,
-    [string]$database,
+    [string]$database = "KFU_QA",
     [string]$user,
     [string]$password,
     [string]$logFile = "C:\Build\DataMigrationLog.txt"

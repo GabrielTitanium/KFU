@@ -30,7 +30,7 @@ variables:
 - name: admin_password
   value: 'SDT123'
 - name: databaseName
-  value: 'KFU-QA'
+  value: 'KFU_QA'
 - name: BackupDirectory
   value: ''
 - name: BackupFileName
