@@ -1,0 +1,307 @@
+trigger: none  
+pr: none
+
+variables:
+- group: 
+- group: Azure Connection
+#- group: TestTrunkVariables
+
+- name: agentName
+  value: 'KFU-QA-Agent'
+- name: pipelineWorkspace
+  value: '$(Pipeline.Workspace)'
+- name: downloadPath
+  value: '$(Pipeline.Workspace)/drop'
+- name: API_URL
+  value: ''
+- name: base_url
+  value: ''
+- name: ClinicKey
+  value: 'CONFIG'
+- name: CustomerPackagesXmlReferencePath
+  value: 'C:\Build\CustomerPackages\CustomerPackages\MiddleEast\MiddleEast'
+- name: CustomerPackagesUploadScriptPath
+  value: 'C:\Build\CustomerPackages\CustomerPackages\MiddleEast\MiddleEast\Run-UploadPackages.ps1'
+- name: destinationPath
+  value: 'C:\Build'
+- name: ServerInstance
+  value: '13.81.109.198'
+- name: admin_username
+  value: 'Titaniumsupport'
+- name: admin_password
+  value: 'SDT123'
+- name: databaseName
+  value: 'KFU-QA'
+- name: BackupDirectory
+  value: ''
+- name: BackupFileName
+  value: ''  # Leave empty to generate a default name
+- name: databaseUserName
+  value: 'saluddental'
+- name: databasePassword
+  value: '$(sql_server_password)'
+- name: organization
+  value: 'Titanium-Solutions'
+- name: project
+  value: 'Titanium'
+- name: variableGroupId
+  value: '35'
+- name: msAzurePATGroupVariables
+  value: '$(msAzurePAT)'
+- name: webAppPool
+  value: 'TitaniumSolutionsDentalAppPool'
+
+
+resources:
+  pipelines:
+    - pipeline: SaludServices104_114  # Alias for the referenced pipeline
+      project: Titanium                     # The project where the pipeline exists
+      source: "Salud Services 104.114"        # The actual pipeline name (quoted because it contains spaces)
+      #trigger:
+        #tags:
+        #- ReleaseReady                      # Only trigger if the run includes the 'ReleaseReady' tag
+
+
+
+
+stages:
+  - stage: FetchSaludArtifacts
+    displayName: "Download Stage"
+    jobs:
+      - job: DownloadArtifacts
+        pool:
+          name: Dublin
+          demands: 'agent.name -equals $(agentName)'
+        workspace:
+          clean: all
+    
+        steps:
+
+          # Display the details of the pipeline resource
+          - script: |
+              echo "Pipeline ID: $(resources.pipeline.SaludServices104_114Pipeline.pipelineID)"
+              echo "Run Name: $(resources.pipeline.SaludServices104_114Pipeline.runName)"
+              echo "Run ID: $(resources.pipeline.SaludServices104_114Pipeline.runID)"
+              echo "Run URI: $(resources.pipeline.SaludServices104_114Pipeline.runURI)"
+              echo "Source Branch: $(resources.pipeline.SaludServices104_114Pipeline.sourceBranch)"
+              echo "Source Commit: $(resources.pipeline.SaludServices104_114Pipeline.sourceCommit)"
+              echo "Source Provider: $(resources.pipeline.SaludServices104_114Pipeline.sourceProvider)"
+              echo "Requested For: $(resources.pipeline.SaludServices104_114Pipeline.requestedFor)"
+            displayName: "Display Pipeline Resource Details"
+
+          # Download artifacts from the SaludServices104_114Pipeline
+          - download: SaludServices104_114
+            artifact: drop
+            patterns: |
+              drop/CustomerPackages.zip
+              drop/Setup_Origin.msi
+            displayName: "Downloading Artifacts"
+
+          # Copy the downloaded artifacts to the build directory
+          - task: PowerShell@2
+            displayName: "Copying Artifacts to Build Directory"
+            inputs:
+              filePath: "$(Build.SourcesDirectory)/Copy-Artifacts.ps1"
+              arguments: >
+                -sourcePath "$(Pipeline.Workspace)\SaludServices104_114\drop\" 
+                -destinationPath "C:\Build\" 
+                -itemsToMove "Setup_Origin.msi,CustomerPackages.zip"
+              failOnStderr: true
+
+            # Extract the CustomerPackages.zip file
+          - powershell: |
+              $zipPath = "C:\Build\CustomerPackages.zip"
+              $extractPath = "C:\Build\CustomerPackages"
+              Write-Host "ZIP Path: $zipPath"
+              Write-Host "Extract Path: $extractPath"
+              Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
+            displayName: "Extracting CustomerPackages.zip"
+
+  - stage: InstallApplication
+    displayName: "Install Application Stage"
+    dependsOn:
+      - FetchSaludArtifacts
+    condition: succeeded()  # Ensure this stage runs only if the previous stage succeeded
+    jobs:
+      - job: InstallAppJob
+        pool:
+          name: Dublin
+          demands: 'agent.name -equals $(agentName)'
+
+        steps:
+          - checkout: self
+          
+          # Stop the IIS service
+          - task: PowerShell@2
+            displayName: "Stop IIS Services"
+            inputs:
+              filePath: "$(Build.SourcesDirectory)/Stop-IIS.ps1"
+              failOnStderr: true
+
+          # Install the Salud application
+          - task: PowerShell@2
+            displayName: "Install Salud Application"
+            inputs:
+              filePath: "$(Build.SourcesDirectory)/Install-Origin.ps1"
+              arguments: >
+                -buildDirectory "C:\Build\" 
+                -installerFile "Setup_Origin.msi" 
+                -logFile "msiexec.log" 
+                -installDir "C:\Program Files\Titanium Solutions" 
+                -features "SelfCheckInFeature,WebServicesFeature,ImagingServicesFeature,ConfigureIISFeature,APIServicesFeature,RenderServicesFeature" 
+                -webSite "Default Web Site" 
+                -webDescription "Default Web Site" 
+                -webSPort 80 
+                -webSiteIp "*" 
+                -dsnMssqlDatabase "KFU-QA" 
+                -dsnMssqlPassword "!Titanium1" 
+                -dsnMssqlServer "10.0.1.11" 
+                -dsnMssqlUsername "saluddental" 
+                -webServicesPathName "TITANIUMWSERVER" 
+                -webApplicationsPathName "TITANIUMCLIENT" 
+                -allowMultipleVersions "No" 
+                -webAppName "Origin" 
+                -webAppPool "$(webAppPool)"
+                -webAppPoolCreate "true" 
+                -documentsPath "%ALLUSERSPROFILE%\Titanium Solutions\Documents" 
+                -reportingServicesURL "" 
+                -reportingServicesContextFolder "" 
+                -reportingServicesUserName "" 
+                -reportingServicesPassword ""
+              failOnStderr: true
+            
+          # Configure IIS Application
+          - powershell: |
+              $AppPoolName = "$(webAppPool)"
+              $RecycleTime = "02:00"
+    
+              # Import IISAdministration module
+              Import-Module IISAdministration
+    
+              # Start IIS Server Manager session
+              $session = Get-IISServerManager
+    
+              # Check if the Application Pool exists
+              $appPool = $session.ApplicationPools[$AppPoolName]
+              if (-not $appPool) {
+                Write-Host "Application Pool '$AppPoolName' not found!"
+                exit 1
+              }
+    
+              Write-Host "Configuring IIS Application Pool: $AppPoolName"
+    
+              # Set Start Mode to AlwaysRunning
+              $appPool.managedPipelineMode = 0  # 0 = Integrated, 1 = Classic
+              $appPool.AutoStart = $true
+              # Set StartMode to AlwaysRunning
+              $appPool.StartMode = [Microsoft.Web.Administration.StartMode]::AlwaysRunning
+              # Commit the changes
+              Write-Host "Set Start Mode to AlwaysRunning"
+    
+              # Set Recycling -> Disable Overlapping Recycle to True
+              $appPool.Recycling.DisallowOverlappingRotation = $true
+              Write-Host "Set Recycling: Disable Overlapping Recycle to True"
+    
+              # Remove Fixed Intervals if it was set before
+              #$appPool.Recycling.PeriodicRestart = [TimeSpan]::Zero
+              #Write-Host "Removed Fixed Interval if it was previously set"
+              $appPool.Recycling.PeriodicRestart.Schedule.Clear()
+              $appPool.Recycling.PeriodicRestart.Time = [TimeSpan]::Zero
+              $appPool.Recycling.PeriodicRestart.Requests = 0
+              $appPool.Recycling.PeriodicRestart.Memory = 0
+              $appPool.Recycling.PeriodicRestart.PrivateMemory = 0
+    
+              # Set Recycling Specific Time at 02:00 AM
+              $schedule = $appPool.Recycling.PeriodicRestart.Schedule
+              foreach ($item in $schedule) {
+                # Remove specific schedules, here we're assuming you want to clear all schedules
+                $item.Delete()  # Delete each scheduled item
+              }
+              $schedule.Clear()  # Remove existing schedules
+              $schedule.Add($RecycleTime)
+    
+              Write-Host "Set Recycling Specific Time to $RecycleTime AM"
+    
+              # Commit Changes
+              $session.CommitChanges()
+    
+              Write-Host "All settings applied successfully!"
+      
+            displayName: 'OptimiseIIS'
+            continueOnError: true
+
+  - stage: DatabaseMigration
+    displayName: "Database Migration Stage"
+    dependsOn: 
+      - InstallApplication
+    condition: succeeded() 
+    jobs:
+      - job: MigrateDatabaseJob
+        pool:
+          name: Dublin
+          demands: 'agent.name -equals $(agentName)'
+
+        steps:
+
+          # Run the database migration
+          - task: PowerShell@2
+            displayName: "Run Data Migration"
+            inputs:
+              filePath: "$(Build.SourcesDirectory)/Run-DatabaseMigration.ps1"
+              arguments: >
+                -exePath "C:\Program Files\Titanium Solutions\Dental Web Services\bin\Titanium.Migration.DataAccess.Migration.exe" 
+                -server "10.0.1.11" 
+                -database "KFU-QA" 
+                -user "saluddental" 
+                -password "$(dsn_mssql_password)" 
+                -logFile "C:\Build\DataMigrationLog.txt"
+              failOnStderr: true
+
+  - stage: UploadCustomerPackages
+    displayName: "Upload Customer Packages Stage"
+    dependsOn:
+      - DatabaseMigration
+    condition: succeeded() # Ensure this stage runs only if the previous stage succeeded
+    jobs:
+      - job: UploadPackagesJob
+        pool:
+          name: Dublin
+          demands: 'agent.name -equals $(agentName)'
+        steps:
+
+          # Start the IIS service
+          - task: PowerShell@2
+            displayName: "Start IIS Services"
+            inputs:
+              filePath: "$(Build.SourcesDirectory)/Start-IIS.ps1"
+              failOnStderr: true
+
+          # Configure Customer Packages for Upload
+          - task: PowerShell@2
+            displayName: "Configure CustomerPackages"
+            inputs:
+              filePath: "$(Build.SourcesDirectory)/Create-UploadWebServices.ps1"
+              arguments: >
+                -url "$(API_URL)" 
+                -username $(admin_username) 
+                -password $(admin_password)
+                -clinic "$(ClinicKey)" 
+                -filepath "$(CustomerPackagesXmlReferencePath)"
+            env:
+              ADMIN_USERNAME: $(admin_username)
+              ADMIN_PASSWORD: $(admin_password)
+
+          # Copy upload customer packages wrapper script to the build directory
+          - task: CopyFiles@2
+            inputs:
+              SourceFolder: '$(Build.SourcesDirectory)'
+              Contents: 'Run-UploadPackages.ps1'
+              TargetFolder: '$(CustomerPackagesXmlReferencePath)'
+              failOnStderr: true
+
+          # Install the CustomerPackages
+          - task: PowerShell@2
+            displayName: "Install CustomerPackages"
+            inputs:
+              filePath: "$(CustomerPackagesUploadScriptPath)"
+            continueOnError: true
