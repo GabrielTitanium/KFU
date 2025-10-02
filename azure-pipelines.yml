@@ -2,7 +2,6 @@ trigger: none
 pr: none
 
 variables:
-- group: 
 - group: Azure Connection
 #- group: TestTrunkVariables
 
