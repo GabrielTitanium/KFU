@@ -12,7 +12,7 @@ variables:
 - name: downloadPath
   value: '$(Pipeline.Workspace)/drop'
 - name: API_URL
-  value: ''
+  value: 'https://KFU-QA.environments.titanium.solutions/origin/api/'
 - name: base_url
   value: ''
 - name: ClinicKey
