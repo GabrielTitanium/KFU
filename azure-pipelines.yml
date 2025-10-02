@@ -137,6 +137,17 @@ stages:
               filePath: "$(Build.SourcesDirectory)/Stop-IIS.ps1"
               failOnStderr: true
 
+          # Clear the registry values
+          - task: PowerShell@2
+            displayName: "Clear Registry Values"
+            inputs:
+              filePath: "$(Build.SourcesDirectory)/Clear-Registry.ps1"
+              arguments: >
+                -registryPath "HKLM:\SOFTWARE\Titanium\Salud\Install" 
+                -registryPathReg "HKEY_LOCAL_MACHINE\SOFTWARE\Titanium\Salud\Install" 
+                -backupDirectory "C:\registry_backup"
+              failOnStderr: true
+
           # Install the Salud application
           - task: PowerShell@2
             displayName: "Install Salud Application"
